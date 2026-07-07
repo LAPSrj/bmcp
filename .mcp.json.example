@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "bugherd": {
+      "command": "bun",
+      "args": ["/path/to/bmcp/dist/index.js"],
+      "env": {
+        "BUGHERD_API_KEY": "your-api-key-here",
+        "BUGHERD_PROJECT_ID": "12345"
+      }
+    }
+  }
+}
