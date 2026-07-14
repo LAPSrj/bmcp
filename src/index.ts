@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import { BugherdClient } from "./bugherd-client.js";
-import type { Task, Comment, Column, Attachment } from "./bugherd-client.js";
+import type { Task, Comment, Column, TaskAttachment } from "./bugherd-client.js";
 
 // ── Config: env first, then on-disk credential files ────────
 // The secret lives in one place — a 0600 file under ~/.config/bugherd-mcp —
@@ -127,6 +127,9 @@ function formatTask(t: Task): string {
   if (t.site) lines.push(`  Site: ${t.site}`);
   if (t.url) lines.push(`  URL: ${t.url}`);
   if (t.screenshot_url) lines.push(`  Screenshot: ${t.screenshot_url}`);
+  if (t.attachments?.length) {
+    lines.push(`  Attachments:`, ...t.attachments.map(a => `    ${formatAttachment(a)}`));
+  }
   if (t.requester) lines.push(`  Requester: ${t.requester.display_name} (${t.requester.email})`);
   if (t.requester_browser) lines.push(`  Browser: ${t.requester_browser}`);
   if (t.requester_os) lines.push(`  OS: ${t.requester_os}`);
@@ -146,7 +149,7 @@ function formatColumn(c: Column): string {
   return `${c.name} (id: ${c.id}, tasks: ${c.tasks_count})`;
 }
 
-function formatAttachment(a: Attachment): string {
+function formatAttachment(a: TaskAttachment): string {
   return `${a.file_name} (id: ${a.id}) — ${a.url}`;
 }
 
@@ -370,6 +373,68 @@ server.tool(
     }
     const text = attachments.map(a => formatAttachment(a)).join("\n");
     return { content: [{ type: "text", text }] };
+  }
+);
+
+// ── Tool: get_attachment ────────────────────────────────────
+
+function formatBytes(n: number): string {
+  return n < 1024 * 1024
+    ? `${(n / 1024).toFixed(1)} KB`
+    : `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Write bytes to `saveTo`, or to a temp dir when no path was given. Downloads
+ * are always written to disk — nothing is ever returned inline. */
+function saveFile(bytes: Buffer, fileName: string, saveTo?: string): string {
+  const target = saveTo
+    ? path.resolve(saveTo)
+    : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bugherd-")), path.basename(fileName));
+  // Never clobber: the model picked this path from a tool argument, and a
+  // silent overwrite of an existing file is not recoverable.
+  if (fs.existsSync(target)) {
+    throw new Error(`Refusing to overwrite existing file: ${target}`);
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, bytes);
+  return target;
+}
+
+server.tool(
+  "get_attachment",
+  "Download a task attachment, or the task's annotated screenshot, to a file. Always writes to disk and returns the path — file contents are never returned inline, whatever the size or type. Read the returned path to view the file. Select the attachment by attachment_id or file_name (use list_attachments to see them), or pass screenshot:true for the BugHerd capture, which is not in the attachments list.",
+  {
+    task_id: z.number().describe("Global task ID"),
+    attachment_id: z.number().optional().describe("Attachment ID to download"),
+    file_name: z.string().optional().describe("Attachment file name to download (case-insensitive), e.g. 'Stacked cards.png'"),
+    screenshot: z.boolean().optional().describe("Download the task's annotated screenshot instead of an attachment"),
+    save_to: z.string().optional().describe("Path to write the file to. Defaults to a temp directory. Will not overwrite an existing file."),
+  },
+  async ({ task_id, attachment_id, file_name, screenshot, save_to }) => {
+    if (!screenshot && attachment_id === undefined && !file_name) {
+      return {
+        content: [{ type: "text", text: "Provide attachment_id, file_name, or screenshot:true." }],
+        isError: true,
+      };
+    }
+
+    const { name, contentType, bytes, source } = screenshot
+      ? await client.downloadScreenshot(task_id).then(r => ({
+          name: path.basename(new URL(r.url).pathname),
+          contentType: r.contentType,
+          bytes: r.bytes,
+          source: `screenshot of task ${task_id}`,
+        }))
+      : await client.downloadAttachment(task_id, { attachmentId: attachment_id, fileName: file_name }).then(r => ({
+          name: r.attachment.file_name,
+          contentType: r.contentType,
+          bytes: r.bytes,
+          source: `${r.attachment.file_name} (id: ${r.attachment.id})`,
+        }));
+
+    const savedPath = saveFile(bytes, name, save_to);
+    const summary = `${source} — ${contentType}, ${formatBytes(bytes.length)}`;
+    return { content: [{ type: "text", text: `${summary}\nSaved to: ${savedPath}` }] };
   }
 );
 
