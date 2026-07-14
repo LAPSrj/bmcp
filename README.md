@@ -6,7 +6,7 @@ An MCP (Model Context Protocol) server for managing [BugHerd](https://bugherd.co
 
 - **Tasks** — list, view, create, update, and move tasks between columns
 - **Comments** — list and add comments (public or private)
-- **Attachments** — list, add (from URL), and delete
+- **Attachments** — list, download, add (from URL), and delete
 - **Columns** — list all project columns/statuses
 - **Members & Guests** — list team members and clients
 - **Column label shortcuts** — configure aliases for "pending", "in progress", and "done" columns
@@ -117,10 +117,32 @@ from **one** of its three sources above.
 | `add_comment` | Add a comment to a task |
 | `list_comments` | List all comments on a task |
 | `list_attachments` | List attachments on a task |
+| `get_attachment` | Download an attachment, or the task's annotated screenshot, to a file |
 | `add_attachment` | Add an attachment from a URL |
 | `delete_attachment` | Delete an attachment |
 | `list_members` | List organization team members |
 | `list_guests` | List organization guests/clients |
+
+### Downloading attachments
+
+`get_attachment` takes a `task_id` plus one selector:
+
+- `attachment_id` or `file_name` — an attachment from the task. Both `get_task`
+  and `list_attachments` print the name and ID, so either can be passed straight
+  back in.
+- `screenshot: true` — the screenshot BugHerd captures when the bug is reported.
+  This is **not** an attachment and does not appear in `list_attachments`; it
+  hangs off the task itself.
+
+The file is **always written to disk** and the path returned — contents are never
+returned inline, regardless of size or type. `save_to` sets the destination;
+without it the file lands in a temp directory. An existing file is never
+overwritten. To view a downloaded image, read the returned path.
+
+```
+"Download the attachment on task #40 and show me what's wrong"
+"Save the screenshot from task #40 to ~/Desktop/bug.jpg"
+```
 
 ## Example Usage
 
@@ -132,7 +154,21 @@ Once configured, you can ask your AI assistant things like:
 - "Move task #42 to In Progress"
 - "Add a comment to task #15: Fixed in commit abc123"
 - "What are the columns in this project?"
+- "Download the screenshot on task #40 — what's wrong with those cards?"
 
 ## API Reference
 
 This server wraps the [BugHerd API v2](https://docs.bugherd.com/api). Authentication uses HTTP Basic with your API key.
+
+A few behaviours of the upstream API that this server papers over, noted here
+because they are not in BugHerd's docs and were confirmed against the live API:
+
+- **Attachment and screenshot URLs are unsigned and public.** They point at
+  `files.bugherd.com/<token>/<name>`, need no `Authorization` header, and are
+  readable by anyone holding the URL. The server sends no credentials when
+  fetching them and refuses to download from any other host.
+- **An attachment's name has two spellings.** Inline on a task the field is
+  `name`; on `/attachments.json` it is `file_name`. `BugherdClient` normalizes
+  both to `file_name`, so nothing outside the client sees `name`.
+- **`?status=` filters the lifecycle state, not the column** — see the
+  `list_tasks` tool description for the full caveat.

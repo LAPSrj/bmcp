@@ -1,5 +1,8 @@
 const BASE_URL = "https://www.bugherd.com";
 
+/** Hosts that attachment/screenshot URLs are allowed to point at. */
+const ALLOWED_FILE_HOSTS = new Set(["files.bugherd.com", "www.bugherd.com"]);
+
 const DEFAULT_MAX_CONCURRENCY = 5;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -80,7 +83,7 @@ export interface Task {
   tag_names: string[];
   external_id: string | null;
   requester_email?: string;
-  attachments?: string[];
+  attachments?: TaskAttachment[];
   screenshot_url: string | null;
   secret_link?: string;
   admin_link?: string;
@@ -103,10 +106,22 @@ export interface Comment {
   is_private: boolean;
 }
 
-export interface Attachment {
+/**
+ * The attachment fields present everywhere, including inline on a task.
+ * BugHerd spells the name field `name` inline on a task and `file_name` on
+ * /attachments.json; normalizeTask() folds the former into the latter so only
+ * `file_name` exists past this client.
+ */
+export interface TaskAttachment {
   id: number;
   file_name: string;
   url: string;
+}
+
+/** A full attachment, as returned by /attachments.json. */
+export interface Attachment extends TaskAttachment {
+  task_id: number;
+  user_id: number;
   created_at: string;
 }
 
@@ -163,23 +178,15 @@ export class BugherdClient {
     return null;
   }
 
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<T> {
-    const url = `${BASE_URL}${path}`;
-    const headers: Record<string, string> = {
-      Authorization: this.authHeader,
-      Accept: "application/json",
-    };
-    const init: RequestInit = { method, headers };
-
-    if (body) {
-      headers["Content-Type"] = "application/json";
-      init.body = JSON.stringify(body);
-    }
-
+  /**
+   * Perform a fetch under the concurrency semaphore, retrying on 429.
+   * Returns the first non-429 response; the caller owns the body.
+   */
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    label: string
+  ): Promise<Response> {
     await this.semaphore.acquire();
     try {
       let lastError: Error | undefined;
@@ -187,24 +194,7 @@ export class BugherdClient {
       for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
         const res = await fetch(url, init);
 
-        if (res.status !== 429) {
-          if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`BugHerd API ${method} ${path} → ${res.status}: ${text}`);
-          }
-          if (res.status === 204) return {} as T;
-          const text = await res.text();
-          try {
-            return JSON.parse(text) as T;
-          } catch {
-            const ct = res.headers.get("content-type") ?? "n/a";
-            const preview = text.length > 500 ? text.slice(0, 500) + "…[truncated]" : text;
-            throw new Error(
-              `BugHerd API ${method} ${path} → ${res.status} returned non-JSON ` +
-              `(content-type: ${ct}, body length: ${text.length}): ${preview}`
-            );
-          }
-        }
+        if (res.status !== 429) return res;
 
         // 429 — figure out how long to wait
         const retryAfterMs =
@@ -214,14 +204,14 @@ export class BugherdClient {
         if (retryAfterMs > this.maxRetryDelayMs) {
           const text = await res.text();
           throw new Error(
-            `BugHerd API ${method} ${path} → 429: rate limited and retry delay ` +
+            `BugHerd API ${label} → 429: rate limited and retry delay ` +
             `(${Math.ceil(retryAfterMs / 1000)}s) exceeds maximum ` +
             `(${Math.ceil(this.maxRetryDelayMs / 1000)}s). ${text}`
           );
         }
 
         lastError = new Error(
-          `BugHerd API ${method} ${path} → 429: rate limited (attempt ${attempt + 1}/${this.maxRetries + 1})`
+          `BugHerd API ${label} → 429: rate limited (attempt ${attempt + 1}/${this.maxRetries + 1})`
         );
 
         if (attempt < this.maxRetries) {
@@ -233,6 +223,88 @@ export class BugherdClient {
     } finally {
       this.semaphore.release();
     }
+  }
+
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown
+  ): Promise<T> {
+    const headers: Record<string, string> = {
+      Authorization: this.authHeader,
+      Accept: "application/json",
+    };
+    const init: RequestInit = { method, headers };
+
+    if (body) {
+      headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+
+    const label = `${method} ${path}`;
+    const res = await this.fetchWithRetry(`${BASE_URL}${path}`, init, label);
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`BugHerd API ${label} → ${res.status}: ${text}`);
+    }
+    if (res.status === 204) return {} as T;
+
+    const text = await res.text();
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      const ct = res.headers.get("content-type") ?? "n/a";
+      const preview = text.length > 500 ? text.slice(0, 500) + "…[truncated]" : text;
+      throw new Error(
+        `BugHerd API ${label} → ${res.status} returned non-JSON ` +
+        `(content-type: ${ct}, body length: ${text.length}): ${preview}`
+      );
+    }
+  }
+
+  /**
+   * Fetch binary content from a BugHerd file URL (files.bugherd.com).
+   * These URLs are unsigned and public — no Authorization header is sent, so a
+   * task's file token is the only credential involved.
+   */
+  private async fetchFile(
+    url: string,
+    label: string
+  ): Promise<{ contentType: string; bytes: Buffer }> {
+    if (!ALLOWED_FILE_HOSTS.has(new URL(url).host)) {
+      throw new Error(
+        `Refusing to download ${label}: host "${new URL(url).host}" is not a known ` +
+        `BugHerd file host (${[...ALLOWED_FILE_HOSTS].join(", ")}).`
+      );
+    }
+
+    const res = await this.fetchWithRetry(url, { redirect: "follow" }, label);
+    if (!res.ok) {
+      throw new Error(`BugHerd file ${label} → ${res.status}: ${await res.text()}`);
+    }
+
+    return {
+      contentType: res.headers.get("content-type") ?? "application/octet-stream",
+      bytes: Buffer.from(await res.arrayBuffer()),
+    };
+  }
+
+  /**
+   * Fold BugHerd's two spellings of an attachment's name into one.
+   * Inline on a task the field is `name`; on /attachments.json it is
+   * `file_name`. Prefer `file_name` so this keeps working unchanged if BugHerd
+   * ever makes the two endpoints agree.
+   */
+  private normalizeTask(task: Task): Task {
+    if (!task.attachments?.length) return task;
+    return {
+      ...task,
+      attachments: task.attachments.map((a) => {
+        const raw = a as TaskAttachment & { name?: string };
+        return { id: raw.id, url: raw.url, file_name: raw.file_name ?? raw.name ?? "" };
+      }),
+    };
   }
 
   // ── Projects ──────────────────────────────────────────────
@@ -269,7 +341,7 @@ export class BugherdClient {
       "GET",
       `/api_v2/projects/${this.projectId}/tasks.json${query}`
     );
-    return { tasks: data.tasks, count: data.meta.count };
+    return { tasks: data.tasks.map((t) => this.normalizeTask(t)), count: data.meta.count };
   }
 
   async getTask(taskId: number): Promise<Task> {
@@ -277,7 +349,7 @@ export class BugherdClient {
       "GET",
       `/api_v2/projects/${this.projectId}/tasks/${taskId}.json`
     );
-    return data.task;
+    return this.normalizeTask(data.task);
   }
 
   async getTaskByLocalId(localTaskId: number): Promise<Task> {
@@ -285,7 +357,7 @@ export class BugherdClient {
       "GET",
       `/api_v2/projects/${this.projectId}/local_tasks/${localTaskId}.json`
     );
-    return data.task;
+    return this.normalizeTask(data.task);
   }
 
   async createTask(task: {
@@ -303,7 +375,7 @@ export class BugherdClient {
       `/api_v2/projects/${this.projectId}/tasks.json`,
       { task }
     );
-    return data.task;
+    return this.normalizeTask(data.task);
   }
 
   async updateTask(
@@ -326,7 +398,7 @@ export class BugherdClient {
       `/api_v2/projects/${this.projectId}/tasks/${taskId}.json`,
       { task: updates }
     );
-    return data.task;
+    return this.normalizeTask(data.task);
   }
 
   // ── Comments ──────────────────────────────────────────────
@@ -376,6 +448,61 @@ export class BugherdClient {
       { attachment: { file_name: fileName, url } }
     );
     return data.attachment;
+  }
+
+  /**
+   * Download one attachment's bytes. Selected by ID or by file name
+   * (case-insensitive); file name is what `list_attachments` shows.
+   */
+  async downloadAttachment(
+    taskId: number,
+    select: { attachmentId?: number; fileName?: string }
+  ): Promise<{ attachment: Attachment; contentType: string; bytes: Buffer }> {
+    const attachments = await this.listAttachments(taskId);
+    if (!attachments.length) {
+      throw new Error(`Task ${taskId} has no attachments.`);
+    }
+
+    const wanted = select.fileName?.toLowerCase();
+    const attachment = attachments.find((a) =>
+      select.attachmentId !== undefined
+        ? a.id === select.attachmentId
+        : a.file_name.toLowerCase() === wanted
+    );
+
+    if (!attachment) {
+      const available = attachments
+        .map((a) => `${a.file_name} (id: ${a.id})`)
+        .join(", ");
+      const asked =
+        select.attachmentId !== undefined
+          ? `id ${select.attachmentId}`
+          : `"${select.fileName}"`;
+      throw new Error(
+        `No attachment matching ${asked} on task ${taskId}. Available: ${available}`
+      );
+    }
+
+    const file = await this.fetchFile(
+      attachment.url,
+      `attachment ${attachment.id} ("${attachment.file_name}")`
+    );
+    return { attachment, ...file };
+  }
+
+  /**
+   * Download a task's annotated screenshot — the image BugHerd captures at
+   * report time. It is NOT part of the attachments list; it hangs off the task.
+   */
+  async downloadScreenshot(
+    taskId: number
+  ): Promise<{ url: string; contentType: string; bytes: Buffer }> {
+    const task = await this.getTask(taskId);
+    if (!task.screenshot_url) {
+      throw new Error(`Task ${taskId} has no screenshot.`);
+    }
+    const file = await this.fetchFile(task.screenshot_url, `screenshot of task ${taskId}`);
+    return { url: task.screenshot_url, ...file };
   }
 
   async deleteAttachment(taskId: number, attachmentId: number): Promise<void> {
