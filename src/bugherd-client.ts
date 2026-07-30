@@ -3,6 +3,19 @@ const BASE_URL = "https://www.bugherd.com";
 /** Hosts that attachment/screenshot URLs are allowed to point at. */
 const ALLOWED_FILE_HOSTS = new Set(["files.bugherd.com", "www.bugherd.com"]);
 
+/**
+ * BugHerd's list endpoint returns only `priority_id`; the single-task endpoint
+ * returns both it and the `priority` name. Verified against the live API by
+ * sampling one task per distinct ID.
+ */
+const PRIORITY_BY_ID: Record<number, string> = {
+  0: "not set",
+  1: "critical",
+  2: "important",
+  3: "normal",
+  4: "minor",
+};
+
 const DEFAULT_MAX_CONCURRENCY = 5;
 const DEFAULT_MAX_RETRY_DELAY_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -291,20 +304,30 @@ export class BugherdClient {
   }
 
   /**
-   * Fold BugHerd's two spellings of an attachment's name into one.
-   * Inline on a task the field is `name`; on /attachments.json it is
-   * `file_name`. Prefer `file_name` so this keeps working unchanged if BugHerd
-   * ever makes the two endpoints agree.
+   * Paper over the two ways BugHerd's endpoints disagree about a task's shape:
+   *
+   * 1. `priority` is absent from the list endpoint, which sends only
+   *    `priority_id`. Derive the name so every task carries one.
+   * 2. An attachment's name is `name` inline on a task and `file_name` on
+   *    /attachments.json. Prefer `file_name` so this keeps working unchanged if
+   *    BugHerd ever makes the two endpoints agree.
    */
   private normalizeTask(task: Task): Task {
-    if (!task.attachments?.length) return task;
-    return {
-      ...task,
-      attachments: task.attachments.map((a) => {
+    const normalized = { ...task };
+
+    if (!normalized.priority && normalized.priority_id !== undefined) {
+      normalized.priority =
+        PRIORITY_BY_ID[normalized.priority_id] ?? `unknown (id ${normalized.priority_id})`;
+    }
+
+    if (normalized.attachments?.length) {
+      normalized.attachments = normalized.attachments.map((a) => {
         const raw = a as TaskAttachment & { name?: string };
         return { id: raw.id, url: raw.url, file_name: raw.file_name ?? raw.name ?? "" };
-      }),
-    };
+      });
+    }
+
+    return normalized;
   }
 
   // ── Projects ──────────────────────────────────────────────
