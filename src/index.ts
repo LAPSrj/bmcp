@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import { BugherdClient } from "./bugherd-client.js";
 import type { Task, Comment, Column, TaskAttachment } from "./bugherd-client.js";
+import { UpstreamMcp } from "./upstream-mcp.js";
 
 // ── Config: env first, then on-disk credential files ────────
 // The secret lives in one place — a 0600 file under ~/.config/bugherd-mcp —
@@ -68,6 +69,8 @@ const MAX_RETRY_DELAY = process.env.BUGHERD_MAX_RETRY_DELAY_MS
 const MAX_RETRIES = process.env.BUGHERD_MAX_RETRIES
   ? Number(process.env.BUGHERD_MAX_RETRIES)
   : undefined;
+
+const upstream = new UpstreamMcp();
 
 const client = new BugherdClient({
   apiKey: API_KEY,
@@ -344,17 +347,39 @@ server.tool(
 
 server.tool(
   "list_comments",
-  "List all comments on a task",
+  "List all comments on a task. Tries the upstream BugHerd MCP first (which includes private comments); falls back to the REST API if the upstream is unavailable.",
   {
     task_id: z.number().describe("Global task ID"),
+    local_task_id: z.number().optional().describe("Project-scoped local task number (the # number). If provided, skips the global→local ID lookup."),
   },
-  async ({ task_id }) => {
+  async ({ task_id, local_task_id }) => {
+    if (upstream.configured) {
+      let localId = local_task_id;
+      if (!localId) {
+        try {
+          const task = await client.getTask(task_id);
+          localId = task.local_task_id;
+        } catch {
+          // Can't resolve — skip upstream
+        }
+      }
+      if (localId) {
+        const upstreamResult = await upstream.getComments(localId, PROJECT_ID);
+        if (upstreamResult) {
+          return { content: [{ type: "text", text: upstreamResult.text }] };
+        }
+      }
+    }
+
     const comments = await client.listComments(task_id);
+    const warning = upstream.configured
+      ? "\n\n⚠ Some comments might not be visible. Run `bugherd-mcp-auth login` to restore full comment access via the BugHerd MCP."
+      : "";
     if (!comments.length) {
-      return { content: [{ type: "text", text: "No comments on this task." }] };
+      return { content: [{ type: "text", text: `No comments on this task.${warning}` }] };
     }
     const text = comments.map(c => formatComment(c)).join("\n");
-    return { content: [{ type: "text", text }] };
+    return { content: [{ type: "text", text: `${text}${warning}` }] };
   }
 );
 

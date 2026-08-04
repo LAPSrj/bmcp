@@ -4,7 +4,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "bugherd-mcp": "dist/index.js"
+    "bugherd-mcp": "dist/index.js",
+    "bugherd-mcp-auth": "dist/auth.js"
   },
   "scripts": {
     "build": "bun run tsc",
