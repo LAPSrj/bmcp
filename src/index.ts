@@ -353,6 +353,7 @@ server.tool(
     local_task_id: z.number().optional().describe("Project-scoped local task number (the # number). If provided, skips the global→local ID lookup."),
   },
   async ({ task_id, local_task_id }) => {
+    let upstreamReached = false;
     if (upstream.configured) {
       let localId = local_task_id;
       if (!localId) {
@@ -368,11 +369,12 @@ server.tool(
         if (upstreamResult) {
           return { content: [{ type: "text", text: upstreamResult.text }] };
         }
+        upstreamReached = await upstream.isConnected();
       }
     }
 
     const comments = await client.listComments(task_id);
-    const warning = upstream.configured
+    const warning = upstream.configured && !upstreamReached
       ? "\n\n⚠ Some comments might not be visible. Run `bugherd-mcp-auth login` to restore full comment access via the BugHerd MCP."
       : "";
     if (!comments.length) {

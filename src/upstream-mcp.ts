@@ -400,6 +400,11 @@ export class UpstreamMcp {
     }
   }
 
+  async isConnected(): Promise<boolean> {
+    await this.maybeReloadConfig();
+    return this.connected;
+  }
+
   private handleDisconnect(): void {
     this.connected = false;
     this.connectAttempted = false;
