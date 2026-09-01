@@ -4,157 +4,24 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as path from "node:path";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import { BugherdClient } from "./bugherd-client.js";
-import type { Task, Comment, Column, TaskAttachment } from "./bugherd-client.js";
 import { UpstreamMcp } from "./upstream-mcp.js";
+import {
+  resolveConfig,
+  createClient,
+  resolveStatus,
+  labelHint,
+  formatTask,
+  formatComment,
+  formatColumn,
+  formatAttachment,
+  formatBytes,
+  saveFile,
+} from "./shared.js";
 
-// ── Config: env first, then on-disk credential files ────────
-// The secret lives in one place — a 0600 file under ~/.config/bugherd-mcp —
-// that the server loads itself. This lets each project's .mcp.json be a bare
-// launch block (no env, no secret, no ${VAR} to resolve at spawn time). An
-// explicit env var still wins, so inline configs keep working unchanged.
-const CREDENTIALS_DIR = path.join(os.homedir(), ".config", "bugherd-mcp");
-const API_KEY_FILE = path.join(CREDENTIALS_DIR, "api-key");
-const PROJECT_ID_FILE = path.join(CREDENTIALS_DIR, "project-id");
-
-function readTrimmed(file: string): string | undefined {
-  try {
-    const v = fs.readFileSync(file, "utf8").trim();
-    return v || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// env <VAR> → env <VAR>_FILE (a path) → default credential file.
-// On total failure, name the default file and exit non-zero.
-function resolveRequired(
-  envVar: string,
-  fileVar: string,
-  defaultFile: string,
-  label: string,
-): string {
-  const fromEnv = process.env[envVar];
-  if (fromEnv) return fromEnv;
-  const file = process.env[fileVar] || defaultFile;
-  const fromFile = readTrimmed(file);
-  if (fromFile) return fromFile;
-  console.error(
-    `No BugHerd ${label} found: set ${envVar}, or write it to ${file} (mode 0600).`,
-  );
-  process.exit(1);
-}
-
-const API_KEY = resolveRequired(
-  "BUGHERD_API_KEY",
-  "BUGHERD_API_KEY_FILE",
-  API_KEY_FILE,
-  "API key",
-);
-const PROJECT_ID = resolveRequired(
-  "BUGHERD_PROJECT_ID",
-  "BUGHERD_PROJECT_ID_FILE",
-  PROJECT_ID_FILE,
-  "project ID",
-);
-
-const MAX_CONCURRENT = process.env.BUGHERD_MAX_CONCURRENT_REQUESTS
-  ? Number(process.env.BUGHERD_MAX_CONCURRENT_REQUESTS)
-  : undefined;
-const MAX_RETRY_DELAY = process.env.BUGHERD_MAX_RETRY_DELAY_MS
-  ? Number(process.env.BUGHERD_MAX_RETRY_DELAY_MS)
-  : undefined;
-const MAX_RETRIES = process.env.BUGHERD_MAX_RETRIES
-  ? Number(process.env.BUGHERD_MAX_RETRIES)
-  : undefined;
-
+const config = resolveConfig();
 const upstream = new UpstreamMcp();
-
-const client = new BugherdClient({
-  apiKey: API_KEY,
-  projectId: PROJECT_ID,
-  columnLabels: {
-    pending: process.env.BUGHERD_COLUMN_PENDING || undefined,
-    inProgress: process.env.BUGHERD_COLUMN_IN_PROGRESS || undefined,
-    done: process.env.BUGHERD_COLUMN_DONE || undefined,
-  },
-  maxConcurrency: MAX_CONCURRENT,
-  maxRetryDelayMs: MAX_RETRY_DELAY,
-  maxRetries: MAX_RETRIES,
-});
-
-// ── Label resolution ────────────────────────────────────────
-
-function resolveStatus(input: string): string {
-  const lower = input.toLowerCase();
-  const labels = client.columnLabels;
-  if (labels.pending && (lower === "pending" || lower === labels.pending.toLowerCase())) {
-    return labels.pending;
-  }
-  if (labels.inProgress && (lower === "in_progress" || lower === "in progress" || lower === labels.inProgress.toLowerCase())) {
-    return labels.inProgress;
-  }
-  if (labels.done && (lower === "done_label" || lower === "done" || lower === labels.done.toLowerCase())) {
-    return labels.done;
-  }
-  return input;
-}
-
-function labelHint(): string {
-  const labels = client.columnLabels;
-  const parts: string[] = [];
-  if (labels.pending) parts.push(`"pending" → "${labels.pending}"`);
-  if (labels.inProgress) parts.push(`"in_progress" → "${labels.inProgress}"`);
-  if (labels.done) parts.push(`"done" → "${labels.done}"`);
-  if (!parts.length) return "";
-  return ` Configured shorthand labels: ${parts.join(", ")}.`;
-}
-
-// ── Helpers ─────────────────────────────────────────────────
-
-function formatTask(t: Task): string {
-  const lines = [
-    `#${t.local_task_id} (id: ${t.id})`,
-    `  Status: ${t.status}`,
-    `  Priority: ${t.priority}`,
-  ];
-  if (t.description) lines.push(`  Description: ${t.description}`);
-  if (t.assigned_to) lines.push(`  Assigned to: ${t.assigned_to.display_name} (${t.assigned_to.email})`);
-  if (t.assignees?.length) {
-    lines.push(`  Assignees: ${t.assignees.map(a => a.display_name).join(", ")}`);
-  }
-  if (t.tag_names?.length) lines.push(`  Tags: ${t.tag_names.join(", ")}`);
-  if (t.external_id) lines.push(`  External ID: ${t.external_id}`);
-  if (t.site) lines.push(`  Site: ${t.site}`);
-  if (t.url) lines.push(`  URL: ${t.url}`);
-  if (t.screenshot_url) lines.push(`  Screenshot: ${t.screenshot_url}`);
-  if (t.attachments?.length) {
-    lines.push(`  Attachments:`, ...t.attachments.map(a => `    ${formatAttachment(a)}`));
-  }
-  if (t.requester) lines.push(`  Requester: ${t.requester.display_name} (${t.requester.email})`);
-  if (t.requester_browser) lines.push(`  Browser: ${t.requester_browser}`);
-  if (t.requester_os) lines.push(`  OS: ${t.requester_os}`);
-  if (t.requester_resolution) lines.push(`  Resolution: ${t.requester_resolution}`);
-  if (t.due_at) lines.push(`  Due: ${t.due_at}`);
-  if (t.secret_link) lines.push(`  Public link: ${t.secret_link}`);
-  lines.push(`  Created: ${t.created_at}`);
-  lines.push(`  Updated: ${t.updated_at}`);
-  return lines.join("\n");
-}
-
-function formatComment(c: Comment): string {
-  return `[${c.created_at}] (user ${c.user_id}${c.is_private ? ", private" : ""}): ${c.text}`;
-}
-
-function formatColumn(c: Column): string {
-  return `${c.name} (id: ${c.id}, tasks: ${c.tasks_count})`;
-}
-
-function formatAttachment(a: TaskAttachment): string {
-  return `${a.file_name} (id: ${a.id}) — ${a.url}`;
-}
+const client = createClient(config);
+const PROJECT_ID = config.projectId;
 
 // ── MCP Server ──────────────────────────────────────────────
 
@@ -218,9 +85,9 @@ server.tool(
 
 server.tool(
   "list_tasks",
-  `List tasks in the project with optional filters. Returns up to 100 tasks per page. The status filter forwards to BH's lifecycle filter, not a true column filter — see the status param description for the conflation; use list_columns / get_project to see the actual columns.${labelHint()}`,
+  `List tasks in the project with optional filters. Returns up to 100 tasks per page. The status filter forwards to BH's lifecycle filter, not a true column filter — see the status param description for the conflation; use list_columns / get_project to see the actual columns.${labelHint(client)}`,
   {
-    status: z.string().optional().describe(`Filter by BugHerd LIFECYCLE state (forwarded as ?status= to the API). Common values: "closed" (closed tasks, detached from columns), plus column-name strings that BH happens to use as lifecycle labels for OPEN tasks (e.g. "Ready for Review", "In Progress", "IGNITE Review"). Does NOT reliably filter by column — notably "Completed" returns 0 (those tasks have lifecycle "closed"), and any non-default column whose name BH doesn't echo as a lifecycle label will also return 0. Use list_columns + get_project to see which columns actually map to a matching lifecycle. Shorthand: "pending", "in_progress", "done" (resolved to the BUGHERD_COLUMN_* env values).${labelHint()}`),
+    status: z.string().optional().describe(`Filter by BugHerd LIFECYCLE state (forwarded as ?status= to the API). Common values: "closed" (closed tasks, detached from columns), plus column-name strings that BH happens to use as lifecycle labels for OPEN tasks (e.g. "Ready for Review", "In Progress", "IGNITE Review"). Does NOT reliably filter by column — notably "Completed" returns 0 (those tasks have lifecycle "closed"), and any non-default column whose name BH doesn't echo as a lifecycle label will also return 0. Use list_columns + get_project to see which columns actually map to a matching lifecycle. Shorthand: "pending", "in_progress", "done" (resolved to the BUGHERD_COLUMN_* env values).${labelHint(client)}`),
     priority: z.string().optional().describe("Filter by priority: not set, critical, important, normal, minor"),
     tag: z.string().optional().describe("Filter by tag name"),
     assigned_to_id: z.number().optional().describe("Filter by assignee user ID"),
@@ -232,7 +99,7 @@ server.tool(
   async (params) => {
     const resolved = { ...params };
     if (resolved.status) {
-      resolved.status = resolveStatus(resolved.status);
+      resolved.status = resolveStatus(client, resolved.status);
     }
     const { tasks, count } = await client.listTasks(resolved);
     if (!tasks.length) {
@@ -272,7 +139,7 @@ server.tool(
   {
     description: z.string().describe("Task description (required)"),
     priority: z.enum(["not set", "critical", "important", "normal", "minor"]).optional().describe("Task priority"),
-    status: z.string().optional().describe(`Column/status name or shorthand ("pending", "in_progress", "done"). Omit for feedback/triage.${labelHint()}`),
+    status: z.string().optional().describe(`Column/status name or shorthand ("pending", "in_progress", "done"). Omit for feedback/triage.${labelHint(client)}`),
     assigned_to_email: z.string().optional().describe("Email of the team member to assign"),
     assigned_to_id: z.number().optional().describe("User ID to assign"),
     requester_email: z.string().optional().describe("Email of the person reporting the bug"),
@@ -281,7 +148,7 @@ server.tool(
   },
   async (params) => {
     const resolved = { ...params };
-    if (resolved.status) resolved.status = resolveStatus(resolved.status);
+    if (resolved.status) resolved.status = resolveStatus(client, resolved.status);
     const task = await client.createTask(resolved);
     return { content: [{ type: "text", text: `Task created:\n${formatTask(task)}` }] };
   }
@@ -314,13 +181,13 @@ server.tool(
 
 server.tool(
   "move_task",
-  `Move a task to a different column/status. Accepts any column name or shorthand labels.${labelHint()}`,
+  `Move a task to a different column/status. Accepts any column name or shorthand labels.${labelHint(client)}`,
   {
     task_id: z.number().describe("Global task ID"),
-    column: z.string().describe(`Target column name or shorthand ("pending", "in_progress", "done").${labelHint()}`),
+    column: z.string().describe(`Target column name or shorthand ("pending", "in_progress", "done").${labelHint(client)}`),
   },
   async ({ task_id, column }) => {
-    const targetStatus = resolveStatus(column);
+    const targetStatus = resolveStatus(client, column);
     const task = await client.updateTask(task_id, { status: targetStatus });
     return { content: [{ type: "text", text: `Task #${task.local_task_id} moved to "${task.status}":\n${formatTask(task)}` }] };
   }
@@ -404,28 +271,6 @@ server.tool(
 );
 
 // ── Tool: get_attachment ────────────────────────────────────
-
-function formatBytes(n: number): string {
-  return n < 1024 * 1024
-    ? `${(n / 1024).toFixed(1)} KB`
-    : `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/** Write bytes to `saveTo`, or to a temp dir when no path was given. Downloads
- * are always written to disk — nothing is ever returned inline. */
-function saveFile(bytes: Buffer, fileName: string, saveTo?: string): string {
-  const target = saveTo
-    ? path.resolve(saveTo)
-    : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bugherd-")), path.basename(fileName));
-  // Never clobber: the model picked this path from a tool argument, and a
-  // silent overwrite of an existing file is not recoverable.
-  if (fs.existsSync(target)) {
-    throw new Error(`Refusing to overwrite existing file: ${target}`);
-  }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, bytes);
-  return target;
-}
 
 server.tool(
   "get_attachment",
