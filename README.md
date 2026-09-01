@@ -1,6 +1,6 @@
-# BugHerd MCP Server
+# BugHerd MCP Server & CLI
 
-An MCP (Model Context Protocol) server for managing [BugHerd](https://bugherd.com) bug tracking tasks. Lets AI assistants list, create, update, and comment on BugHerd tickets directly.
+An MCP (Model Context Protocol) server **and standalone CLI** for managing [BugHerd](https://bugherd.com) bug tracking tasks. Lets AI assistants — or you, from the terminal — list, create, update, and comment on BugHerd tickets directly.
 
 ## Features
 
@@ -25,6 +25,11 @@ An MCP (Model Context Protocol) server for managing [BugHerd](https://bugherd.co
 bun install
 bun run build
 ```
+
+This produces three binaries in `dist/`:
+- `bugherd-mcp` — MCP server (stdio transport)
+- `bugherd` — standalone CLI
+- `bugherd-mcp-auth` — OAuth login helper for upstream BugHerd MCP
 
 ### MCP Configuration
 
@@ -144,7 +149,48 @@ overwritten. To view a downloaded image, read the returned path.
 "Save the screenshot from task #40 to ~/Desktop/bug.jpg"
 ```
 
-## Example Usage
+## CLI Usage
+
+The same operations are available from the terminal via the `bugherd` command.
+It uses the same credential resolution as the MCP server (env vars or
+`~/.config/bugherd-mcp/` files).
+
+```bash
+bugherd <command> [args] [flags]
+```
+
+Task IDs accept global numeric IDs or `#N` for local task numbers.
+
+| Command | Description |
+|---|---|
+| `bugherd project` | Show project details |
+| `bugherd columns` | List columns/statuses |
+| `bugherd tasks [--status=X] [--priority=X] [--tag=X] [--page=N]` | List tasks |
+| `bugherd task <id>` | Show a single task (`#42` or `12345`) |
+| `bugherd create <description> [--priority=X] [--status=X] [--tags=a,b]` | Create a task |
+| `bugherd update <id> [--description=X] [--priority=X] [--tags=a,b]` | Update a task |
+| `bugherd move <id> <column>` | Move a task to a column |
+| `bugherd comments <id>` | List comments on a task |
+| `bugherd comment <id> <text> [--private] [--email=X]` | Add a comment |
+| `bugherd attachments <id>` | List attachments on a task |
+| `bugherd download <id> [--attachment-id=N \| --file-name=X \| --screenshot]` | Download an attachment or screenshot |
+| `bugherd attach <id> <file-name> <url>` | Add an attachment |
+| `bugherd detach <id> <attachment-id>` | Delete an attachment |
+| `bugherd members` | List team members |
+| `bugherd guests` | List guests/clients |
+
+### Examples
+
+```bash
+bugherd tasks --status=pending --priority=critical
+bugherd task "#42"
+bugherd create "Login button broken on mobile Safari" --priority=important --tags=mobile,auth
+bugherd move "#42" "In Progress"
+bugherd comment "#42" "Fixed in commit abc123" --private
+bugherd download "#40" --screenshot --save-to=~/Desktop/bug.jpg
+```
+
+## MCP Example Usage
 
 Once configured, you can ask your AI assistant things like:
 
