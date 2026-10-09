@@ -6,7 +6,7 @@ import type { Task, Comment, Column, TaskAttachment } from "./bugherd-client.js"
 
 // ── Config: env first, then on-disk credential files ────────
 
-const CREDENTIALS_DIR = path.join(os.homedir(), ".config", "bugherd-mcp");
+const CREDENTIALS_DIR = path.join(os.homedir(), ".config", "bmcp");
 const API_KEY_FILE = path.join(CREDENTIALS_DIR, "api-key");
 const PROJECT_ID_FILE = path.join(CREDENTIALS_DIR, "project-id");
 

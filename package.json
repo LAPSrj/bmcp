@@ -1,10 +1,10 @@
 {
-  "name": "bugherd-mcp",
+  "name": "bmcp",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "bugherd-mcp": "dist/index.js",
+    "bmcp": "dist/index.js",
     "bugherd": "dist/cli.js"
   },
   "scripts": {

@@ -1,4 +1,4 @@
-# BugHerd MCP Server & CLI
+# bmcp: BugHerd MCP Server & CLI
 
 An MCP (Model Context Protocol) server **and standalone CLI** for managing [BugHerd](https://bugherd.com) bug tracking tasks. Lets AI assistants — or you, from the terminal — list, create, update, and comment on BugHerd tickets directly.
 
@@ -27,7 +27,7 @@ bun run build
 ```
 
 This produces two binaries in `dist/`:
-- `bugherd-mcp` — MCP server (stdio transport)
+- `bmcp` — MCP server (stdio transport)
 - `bugherd` — standalone CLI
 
 ### MCP Configuration
@@ -36,10 +36,10 @@ The server resolves the API key from the first source that has it:
 
 1. `BUGHERD_API_KEY` environment variable
 2. `BUGHERD_API_KEY_FILE` environment variable (path to a file holding the key)
-3. Default credential file `~/.config/bugherd-mcp/api-key` (mode `0600`)
+3. Default credential file `~/.config/bmcp/api-key` (mode `0600`)
 
 The project ID resolves the same way: `BUGHERD_PROJECT_ID` env,
-`BUGHERD_PROJECT_ID_FILE`, then `~/.config/bugherd-mcp/project-id`.
+`BUGHERD_PROJECT_ID_FILE`, then `~/.config/bmcp/project-id`.
 
 **Option A — inline in your MCP client config** (e.g. `claude_desktop_config.json`
 or `.mcp.json`):
@@ -49,7 +49,7 @@ or `.mcp.json`):
   "mcpServers": {
     "bugherd": {
       "command": "bun",
-      "args": ["/path/to/bugherd-mcp/dist/index.js"],
+      "args": ["/path/to/bmcp/dist/index.js"],
       "env": {
         "BUGHERD_API_KEY": "your-api-key-here",
         "BUGHERD_PROJECT_ID": "12345",
@@ -69,10 +69,10 @@ across projects, or to keep secrets out of your MCP config). Write them once and
 keep each project's `.mcp.json` a bare launch block with no `env`:
 
 ```bash
-mkdir -p -m 700 ~/.config/bugherd-mcp
-printf %s 'your-api-key-here' > ~/.config/bugherd-mcp/api-key
-printf %s '12345'             > ~/.config/bugherd-mcp/project-id
-chmod 600 ~/.config/bugherd-mcp/api-key ~/.config/bugherd-mcp/project-id
+mkdir -p -m 700 ~/.config/bmcp
+printf %s 'your-api-key-here' > ~/.config/bmcp/api-key
+printf %s '12345'             > ~/.config/bmcp/project-id
+chmod 600 ~/.config/bmcp/api-key ~/.config/bmcp/project-id
 ```
 
 ```json
@@ -80,7 +80,7 @@ chmod 600 ~/.config/bugherd-mcp/api-key ~/.config/bugherd-mcp/project-id
   "mcpServers": {
     "bugherd": {
       "command": "bun",
-      "args": ["/path/to/bugherd-mcp/dist/index.js"]
+      "args": ["/path/to/bmcp/dist/index.js"]
     }
   }
 }
@@ -94,9 +94,9 @@ The server reads the files itself regardless of how it's launched, so no secret
 | Variable | Required | Description |
 |---|---|---|
 | `BUGHERD_API_KEY` | ✅¹ | Your BugHerd API key (found in Settings > General) |
-| `BUGHERD_API_KEY_FILE` | – | Path to a file holding the key; overrides the default `~/.config/bugherd-mcp/api-key` |
+| `BUGHERD_API_KEY_FILE` | – | Path to a file holding the key; overrides the default `~/.config/bmcp/api-key` |
 | `BUGHERD_PROJECT_ID` | ✅¹ | The numeric ID of your BugHerd project |
-| `BUGHERD_PROJECT_ID_FILE` | – | Path to a file holding the project ID; overrides the default `~/.config/bugherd-mcp/project-id` |
+| `BUGHERD_PROJECT_ID_FILE` | – | Path to a file holding the project ID; overrides the default `~/.config/bmcp/project-id` |
 | `BUGHERD_COLUMN_PENDING` | – | Column name to map to the "pending" shorthand |
 | `BUGHERD_COLUMN_IN_PROGRESS` | – | Column name to map to the "in_progress" shorthand |
 | `BUGHERD_COLUMN_DONE` | – | Column name to map to the "done_label" shorthand |
@@ -152,7 +152,7 @@ overwritten. To view a downloaded image, read the returned path.
 
 The same operations are available from the terminal via the `bugherd` command.
 It uses the same credential resolution as the MCP server (env vars or
-`~/.config/bugherd-mcp/` files).
+`~/.config/bmcp/` files).
 
 ```bash
 bugherd <command> [args] [flags]
