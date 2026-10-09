@@ -4,7 +4,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as path from "node:path";
-import { UpstreamMcp } from "./upstream-mcp.js";
 import {
   resolveConfig,
   createClient,
@@ -19,9 +18,7 @@ import {
 } from "./shared.js";
 
 const config = resolveConfig();
-const upstream = new UpstreamMcp();
 const client = createClient(config);
-const PROJECT_ID = config.projectId;
 
 // ── MCP Server ──────────────────────────────────────────────
 
@@ -214,41 +211,17 @@ server.tool(
 
 server.tool(
   "list_comments",
-  "List all comments on a task. Tries the upstream BugHerd MCP first (which includes private comments); falls back to the REST API if the upstream is unavailable.",
+  "List all comments on a task, including private ones",
   {
     task_id: z.number().describe("Global task ID"),
-    local_task_id: z.number().optional().describe("Project-scoped local task number (the # number). If provided, skips the global→local ID lookup."),
   },
-  async ({ task_id, local_task_id }) => {
-    let upstreamReached = false;
-    if (upstream.configured) {
-      let localId = local_task_id;
-      if (!localId) {
-        try {
-          const task = await client.getTask(task_id);
-          localId = task.local_task_id;
-        } catch {
-          // Can't resolve — skip upstream
-        }
-      }
-      if (localId) {
-        const upstreamResult = await upstream.getComments(localId, PROJECT_ID);
-        if (upstreamResult) {
-          return { content: [{ type: "text", text: upstreamResult.text }] };
-        }
-        upstreamReached = await upstream.isConnected();
-      }
-    }
-
+  async ({ task_id }) => {
     const comments = await client.listComments(task_id);
-    const warning = upstream.configured && !upstreamReached
-      ? "\n\n⚠ Some comments might not be visible. Run `bugherd-mcp-auth login` to restore full comment access via the BugHerd MCP."
-      : "";
     if (!comments.length) {
-      return { content: [{ type: "text", text: `No comments on this task.${warning}` }] };
+      return { content: [{ type: "text", text: "No comments on this task." }] };
     }
     const text = comments.map(c => formatComment(c)).join("\n");
-    return { content: [{ type: "text", text: `${text}${warning}` }] };
+    return { content: [{ type: "text", text }] };
   }
 );
 
