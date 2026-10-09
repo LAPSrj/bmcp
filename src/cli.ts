@@ -358,7 +358,7 @@ Commands:
   guests                           List guests/clients
 
 Task IDs accept global numeric IDs or #N for local task numbers.
-Configuration: BUGHERD_API_KEY, BUGHERD_PROJECT_ID (env or ~/.config/bugherd-mcp/).
+Configuration: BUGHERD_API_KEY, BUGHERD_PROJECT_ID (env or ~/.config/bmcp/).
 `);
   process.exit(2);
 }
