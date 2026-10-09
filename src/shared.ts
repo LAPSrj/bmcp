@@ -105,14 +105,34 @@ export function labelHint(client: BugherdClient): string {
   return ` Configured shorthand labels: ${parts.join(", ")}.`;
 }
 
+// ── Comment counts ──────────────────────────────────────────
+
+/**
+ * BugHerd's task endpoints don't include a comment count, so fetch each task's
+ * comments. A failed fetch maps to null instead of failing the whole list.
+ */
+export async function countComments(
+  client: BugherdClient,
+  tasks: Task[],
+): Promise<Map<number, number | null>> {
+  const results = await Promise.allSettled(tasks.map(t => client.listComments(t.id)));
+  return new Map(tasks.map((t, i) => {
+    const r = results[i]!;
+    return [t.id, r.status === "fulfilled" ? r.value.length : null];
+  }));
+}
+
 // ── Formatting ──────────────────────────────────────────────
 
-export function formatTask(t: Task): string {
+export function formatTask(t: Task, commentCount?: number | null): string {
   const lines = [
     `#${t.local_task_id} (id: ${t.id})`,
     `  Status: ${t.status}`,
     `  Priority: ${t.priority}`,
   ];
+  if (commentCount !== undefined) {
+    lines.push(`  Comments: ${commentCount ?? "unknown (fetch failed)"}`);
+  }
   if (t.description) lines.push(`  Description: ${t.description}`);
   if (t.assigned_to) lines.push(`  Assigned to: ${t.assigned_to.display_name} (${t.assigned_to.email})`);
   if (t.assignees?.length) {
