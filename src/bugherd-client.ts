@@ -115,7 +115,8 @@ export interface Comment {
   id: number;
   text: string;
   created_at: string;
-  user_id: number;
+  /** null on some comments; the API doesn't name the author anywhere else. */
+  user_id: number | null;
   is_private: boolean;
 }
 

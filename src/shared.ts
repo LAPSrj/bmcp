@@ -138,7 +138,8 @@ export function formatTask(t: Task): string {
 }
 
 export function formatComment(c: Comment): string {
-  return `[${c.created_at}] (user ${c.user_id}${c.is_private ? ", private" : ""}): ${c.text}`;
+  const author = c.user_id === null ? "unknown user" : `user ${c.user_id}`;
+  return `[${c.created_at}] (${author}${c.is_private ? ", private" : ""}): ${c.text}`;
 }
 
 export function formatColumn(c: Column): string {
