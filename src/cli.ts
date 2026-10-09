@@ -5,6 +5,7 @@ import {
   resolveConfig,
   createClient,
   resolveStatus,
+  countComments,
   formatTask,
   formatComment,
   formatColumn,
@@ -107,9 +108,10 @@ async function cmdTasks(flags: Record<string, string | true>) {
     console.log(`No tasks found (total: ${count}).`);
     return;
   }
+  const commentCounts = await countComments(client, tasks);
   const page = params.page ? Number(params.page) : 1;
   console.log(`Showing ${tasks.length} of ${count} tasks (page ${page}):\n`);
-  console.log(tasks.map(t => formatTask(t)).join("\n"));
+  console.log(tasks.map(t => formatTask(t, commentCounts.get(t.id))).join("\n"));
 }
 
 async function cmdTask(positional: string[]) {

@@ -9,6 +9,7 @@ import {
   createClient,
   resolveStatus,
   labelHint,
+  countComments,
   formatTask,
   formatComment,
   formatColumn,
@@ -82,7 +83,7 @@ server.tool(
 
 server.tool(
   "list_tasks",
-  `List tasks in the project with optional filters. Returns up to 100 tasks per page. The status filter forwards to BH's lifecycle filter, not a true column filter — see the status param description for the conflation; use list_columns / get_project to see the actual columns.${labelHint(client)}`,
+  `List tasks in the project with optional filters. Returns up to 100 tasks per page. Each task shows its comment count (including private comments); use list_comments to read them. The status filter forwards to BH's lifecycle filter, not a true column filter — see the status param description for the conflation; use list_columns / get_project to see the actual columns.${labelHint(client)}`,
   {
     status: z.string().optional().describe(`Filter by BugHerd LIFECYCLE state (forwarded as ?status= to the API). Common values: "closed" (closed tasks, detached from columns), plus column-name strings that BH happens to use as lifecycle labels for OPEN tasks (e.g. "Ready for Review", "In Progress", "IGNITE Review"). Does NOT reliably filter by column — notably "Completed" returns 0 (those tasks have lifecycle "closed"), and any non-default column whose name BH doesn't echo as a lifecycle label will also return 0. Use list_columns + get_project to see which columns actually map to a matching lifecycle. Shorthand: "pending", "in_progress", "done" (resolved to the BUGHERD_COLUMN_* env values).${labelHint(client)}`),
     priority: z.string().optional().describe("Filter by priority: not set, critical, important, normal, minor"),
@@ -102,8 +103,9 @@ server.tool(
     if (!tasks.length) {
       return { content: [{ type: "text", text: `No tasks found matching status "${resolved.status ?? "any"}" (total: ${count}).` }] };
     }
+    const commentCounts = await countComments(client, tasks);
     const header = `Showing ${tasks.length} of ${count} tasks (page ${params.page ?? 1}):`;
-    const text = [header, "", ...tasks.map(t => formatTask(t))].join("\n");
+    const text = [header, "", ...tasks.map(t => formatTask(t, commentCounts.get(t.id)))].join("\n");
     return { content: [{ type: "text", text }] };
   }
 );

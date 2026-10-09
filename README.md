@@ -1,4 +1,4 @@
-# bmcp: BugHerd MCP Server & CLI
+# bmcp
 
 An MCP (Model Context Protocol) server **and standalone CLI** for managing [BugHerd](https://bugherd.com) bug tracking tasks. Lets AI assistants — or you, from the terminal — list, create, update, and comment on BugHerd tickets directly.
 
@@ -113,7 +113,7 @@ from **one** of its three sources above.
 |---|---|
 | `get_project` | Get project details, members, guests, and columns |
 | `list_columns` | List all columns/statuses in the project |
-| `list_tasks` | List tasks with filters (status, priority, tag, assignee, etc.) |
+| `list_tasks` | List tasks with filters (status, priority, tag, assignee, etc.), each with its comment count |
 | `get_task` | Get a single task by global ID or local #number |
 | `create_task` | Create a new task/bug |
 | `update_task` | Update task fields (description, priority, tags, assignee, etc.) |
