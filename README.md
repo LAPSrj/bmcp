@@ -26,10 +26,9 @@ bun install
 bun run build
 ```
 
-This produces three binaries in `dist/`:
+This produces two binaries in `dist/`:
 - `bugherd-mcp` — MCP server (stdio transport)
 - `bugherd` — standalone CLI
-- `bugherd-mcp-auth` — OAuth login helper for upstream BugHerd MCP
 
 ### MCP Configuration
 
