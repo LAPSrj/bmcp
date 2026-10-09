@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 *.log
+.screenshots/
 
 # Local MCP client config — may contain the live API key. Use .mcp.json.example as the template.
 .mcp.json

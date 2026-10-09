@@ -28,7 +28,7 @@ export interface BugherdConfig {
     inProgress?: string;
     done?: string;
   };
-  /** Maximum number of concurrent API requests (default: 3) */
+  /** Maximum number of concurrent API requests (default: 5) */
   maxConcurrency?: number;
   /** Maximum time in ms to wait on a 429 retry before returning the error (default: 30000) */
   maxRetryDelayMs?: number;
