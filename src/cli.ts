@@ -212,7 +212,15 @@ async function cmdComment(positional: string[], flags: Record<string, string | t
     taskId = id.task_id!;
   }
 
-  const opts: { email?: string; is_private?: boolean } = {};
+  const opts: { user_id?: number; email?: string; is_private?: boolean } = {};
+  if (flags["user-id"] !== undefined) {
+    const userId = Number(flags["user-id"]);
+    if (!Number.isInteger(userId)) {
+      console.error(`--user-id must be a number, got "${flags["user-id"]}".`);
+      process.exit(1);
+    }
+    opts.user_id = userId;
+  }
   if (flags.email) opts.email = String(flags.email);
   if (flags.private === true) opts.is_private = true;
 
@@ -349,8 +357,8 @@ Commands:
                                    Update a task
   move <id> <column>               Move a task to a column
   comments <id>                    List comments on a task
-  comment <id> <text> [--private] [--email=X]
-                                   Add a comment
+  comment <id> <text> [--private] [--user-id=N | --email=X]
+                                   Add a comment (default author: BUGHERD_USER_ID / BUGHERD_USER_EMAIL)
   attachments <id>                 List attachments on a task
   download <id> [--attachment-id=N | --file-name=X | --screenshot]
                                    Download an attachment or screenshot
@@ -360,7 +368,8 @@ Commands:
   guests                           List guests/clients
 
 Task IDs accept global numeric IDs or #N for local task numbers.
-Configuration: BUGHERD_API_KEY, BUGHERD_PROJECT_ID (env or ~/.config/bmcp/).
+Configuration: BUGHERD_API_KEY, BUGHERD_PROJECT_ID, optional BUGHERD_USER_ID /
+BUGHERD_USER_EMAIL (env or ~/.config/bmcp/).
 `);
   process.exit(2);
 }

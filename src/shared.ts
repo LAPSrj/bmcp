@@ -9,6 +9,8 @@ import type { Task, Comment, Column, TaskAttachment } from "./bugherd-client.js"
 const CREDENTIALS_DIR = path.join(os.homedir(), ".config", "bmcp");
 const API_KEY_FILE = path.join(CREDENTIALS_DIR, "api-key");
 const PROJECT_ID_FILE = path.join(CREDENTIALS_DIR, "project-id");
+const USER_ID_FILE = path.join(CREDENTIALS_DIR, "user-id");
+const USER_EMAIL_FILE = path.join(CREDENTIALS_DIR, "user-email");
 
 function readTrimmed(file: string): string | undefined {
   try {
@@ -19,17 +21,23 @@ function readTrimmed(file: string): string | undefined {
   }
 }
 
+export function resolveOptional(
+  envVar: string,
+  fileVar: string,
+  defaultFile: string,
+): string | undefined {
+  return process.env[envVar] || readTrimmed(process.env[fileVar] || defaultFile);
+}
+
 export function resolveRequired(
   envVar: string,
   fileVar: string,
   defaultFile: string,
   label: string,
 ): string {
-  const fromEnv = process.env[envVar];
-  if (fromEnv) return fromEnv;
+  const value = resolveOptional(envVar, fileVar, defaultFile);
+  if (value) return value;
   const file = process.env[fileVar] || defaultFile;
-  const fromFile = readTrimmed(file);
-  if (fromFile) return fromFile;
   console.error(
     `No BugHerd ${label} found: set ${envVar}, or write it to ${file} (mode 0600).`,
   );
@@ -60,7 +68,17 @@ export function resolveConfig() {
     ? Number(process.env.BUGHERD_MAX_RETRIES)
     : undefined;
 
-  return { apiKey, projectId, maxConcurrency, maxRetryDelayMs, maxRetries };
+  // Default comment author. The API key belongs to the account, not a person,
+  // so comments without user_id or email are posted anonymously.
+  const rawUserId = resolveOptional("BUGHERD_USER_ID", "BUGHERD_USER_ID_FILE", USER_ID_FILE);
+  const userId = rawUserId ? Number(rawUserId) : undefined;
+  if (rawUserId && !Number.isInteger(userId)) {
+    console.error(`BUGHERD_USER_ID must be a numeric BugHerd user ID, got "${rawUserId}".`);
+    process.exit(1);
+  }
+  const userEmail = resolveOptional("BUGHERD_USER_EMAIL", "BUGHERD_USER_EMAIL_FILE", USER_EMAIL_FILE);
+
+  return { apiKey, projectId, maxConcurrency, maxRetryDelayMs, maxRetries, userId, userEmail };
 }
 
 export function createClient(config: ReturnType<typeof resolveConfig>): BugherdClient {
@@ -75,6 +93,7 @@ export function createClient(config: ReturnType<typeof resolveConfig>): BugherdC
     maxConcurrency: config.maxConcurrency,
     maxRetryDelayMs: config.maxRetryDelayMs,
     maxRetries: config.maxRetries,
+    defaultAuthor: { userId: config.userId, email: config.userEmail },
   });
 }
 
@@ -158,7 +177,8 @@ export function formatTask(t: Task, commentCount?: number | null): string {
 }
 
 export function formatComment(c: Comment): string {
-  const author = c.user_id === null ? "unknown user" : `user ${c.user_id}`;
+  // The create response leaves user_id out entirely; list responses may send null.
+  const author = c.user_id == null ? "unknown user" : `user ${c.user_id}`;
   return `[${c.created_at}] (${author}${c.is_private ? ", private" : ""}): ${c.text}`;
 }
 

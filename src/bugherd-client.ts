@@ -34,6 +34,13 @@ export interface BugherdConfig {
   maxRetryDelayMs?: number;
   /** Maximum number of retries on 429 responses (default: 3) */
   maxRetries?: number;
+  /** Comment author used when addComment gets no user_id or email */
+  defaultAuthor?: CommentAuthor;
+}
+
+export interface CommentAuthor {
+  userId?: number;
+  email?: string;
 }
 
 // ── Simple promise-based semaphore ─────────────────────────
@@ -115,8 +122,8 @@ export interface Comment {
   id: number;
   text: string;
   created_at: string;
-  /** null on some comments; the API doesn't name the author anywhere else. */
-  user_id: number | null;
+  /** null on some comments and missing from the create response; the API doesn't name the author anywhere else. */
+  user_id?: number | null;
   is_private: boolean;
 }
 
@@ -168,6 +175,7 @@ export class BugherdClient {
   private semaphore: Semaphore;
   private maxRetryDelayMs: number;
   private maxRetries: number;
+  private defaultAuthor: CommentAuthor;
 
   constructor(config: BugherdConfig) {
     this.authHeader =
@@ -177,6 +185,7 @@ export class BugherdClient {
     this.semaphore = new Semaphore(config.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY);
     this.maxRetryDelayMs = config.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
     this.maxRetries = config.maxRetries ?? DEFAULT_MAX_RETRIES;
+    this.defaultAuthor = config.defaultAuthor ?? {};
   }
 
   /**
@@ -438,10 +447,16 @@ export class BugherdClient {
   async addComment(
     taskId: number,
     text: string,
-    options?: { email?: string; is_private?: boolean }
+    options?: { user_id?: number; email?: string; is_private?: boolean }
   ): Promise<Comment> {
     const comment: Record<string, unknown> = { text };
-    if (options?.email) comment.email = options.email;
+    // An author given on the call replaces the default one entirely, so a
+    // default user_id never overrides an explicit email.
+    const explicit = options?.user_id !== undefined || !!options?.email;
+    const userId = explicit ? options?.user_id : this.defaultAuthor.userId;
+    const email = explicit ? options?.email : this.defaultAuthor.email;
+    if (userId !== undefined) comment.user_id = userId;
+    else if (email) comment.email = email;
     if (options?.is_private !== undefined) comment.is_private = options.is_private;
     const data = await this.request<{ comment: Comment }>(
       "POST",

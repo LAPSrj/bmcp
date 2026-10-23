@@ -200,11 +200,12 @@ server.tool(
   {
     task_id: z.number().describe("Global task ID"),
     text: z.string().describe("Comment text"),
-    email: z.string().optional().describe("Post as this user (by email)"),
+    user_id: z.number().int().optional().describe("Post as this BugHerd user ID (overrides the configured default author)"),
+    email: z.string().optional().describe("Post as this user, looked up by email (overrides the configured default author)"),
     is_private: z.boolean().optional().describe("If true, only visible to team members (not guests/clients)"),
   },
-  async ({ task_id, text, email, is_private }) => {
-    const comment = await client.addComment(task_id, text, { email, is_private });
+  async ({ task_id, text, user_id, email, is_private }) => {
+    const comment = await client.addComment(task_id, text, { user_id, email, is_private });
     return { content: [{ type: "text", text: `Comment added:\n${formatComment(comment)}` }] };
   }
 );
