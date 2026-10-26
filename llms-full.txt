@@ -1,0 +1,262 @@
+# bmcp
+
+A Model Context Protocol server (`bmcp`, registered as `bugherd`) and CLI (`bugherd`) for one BugHerd project: list, read, create, update and move tasks, read and post comments, and list, download, add and delete attachments. It wraps the BugHerd API v2 (https://docs.bugherd.com/api).
+
+This file is the manual for agents that call the server's tools or the CLI. If you're changing the server itself, read the source; this file describes the tool contract, with pointers to the code behind each behavior (§ Source pointers).
+
+## TL;DR {#tldr}
+
+- The server is bound to one project, set by `BUGHERD_PROJECT_ID` or `~/.config/bmcp/project-id`. No tool takes a project ID.
+- Tasks have two IDs. `#67` on the board is the `local_task_id`; `30000001` is the global `task_id`. Only `get_task` accepts the local number. Every other tool takes the global `task_id`, which `get_task` and `list_tasks` print as `(id: …)`.
+- `list_tasks`' `status` filter is BugHerd's lifecycle state, not the column. Some columns return 0 tasks through it (§ Columns and status).
+- `add_attachment` takes a public http(s) URL, which BugHerd downloads, or an absolute local file path, which the server uploads. A relative path is an error.
+- `get_attachment` always writes the file to disk and returns the path. Read that path to see the file.
+- Comments post as the configured default author (`BUGHERD_USER_ID` / `BUGHERD_USER_EMAIL`). Without one, and without `user_id` or `email` on the call, they post as anonymous.
+- The server has no tool to edit or delete a comment, so read a comment through before posting it.
+- Code changes reach a running server only after it restarts. In Claude Code, reconnect `bugherd` with `/mcp` or start a new session.
+
+## Command index {#command-index}
+
+| Tool | Purpose | Notes |
+|---|---|---|
+| `get_project` | Project name, URL, columns, members, guests, configured column labels | |
+| `list_columns` | Columns with their IDs and task counts | |
+| `list_tasks` | Up to 100 tasks per page, each with its comment count | (contract) § Columns and status, § Rate limits |
+| `get_task` | One task in full, by `task_id` or `local_task_id` | The only tool that takes the board number |
+| `create_task` | New task | Omit `status` to create it in feedback/triage |
+| `update_task` | Change description, priority, assignees, tags, external ID, site or page path | |
+| `move_task` | Move a task to a column | Accepts column names and the configured shorthands |
+| `add_comment` | Post a comment | (contract) § Comments |
+| `list_comments` | Every comment on a task, private ones included | |
+| `list_attachments` | Attachments on a task | Doesn't include the task's screenshot |
+| `get_attachment` | Download an attachment or the task's screenshot to a file | (contract) § Downloading |
+| `add_attachment` | Attach a file from a public URL or an absolute local path | (contract) § Adding attachments |
+| `delete_attachment` | Delete an attachment | Permanent |
+| `list_members` | Team members in the organization, with user IDs | Use for `user_id` and `assigned_to_id` |
+| `list_guests` | Guests (clients) in the organization | |
+
+Every tool returns plain text (§ Reading the output). An error comes back as the tool's error text, such as `BugHerd API POST /api_v2/… → 422: {…}`.
+
+## Task IDs {#task-ids}
+
+| arg | Where it's accepted | Example |
+|---|---|---|
+| `local_task_id` | `get_task` only | `67` for `#67` on the board |
+| `task_id` | Every tool that acts on a task | `30000001` |
+
+`get_task` needs one of the two. With both, `local_task_id` is used. To act on board ticket `#67`, call `get_task({ local_task_id: 67 })` and pass its `id` to the other tools.
+
+The CLI takes either form wherever a task ID goes: `#67` for the board number, or `30000001`. Quote `"#67"` in the shell.
+
+## Columns and status {#status}
+
+`list_tasks({ status })` forwards the value as BugHerd's `?status=` filter, which matches the task's lifecycle state. BugHerd uses some column names as lifecycle labels for open tasks (for example "Ready for Review" or "In Progress"), so those work as filters. Others don't:
+
+- `"closed"` returns closed tasks, which are detached from columns.
+- A "Completed" or "Done" column returns 0, because its tasks have the lifecycle state `closed`.
+- A custom column whose name BugHerd doesn't use as a lifecycle label also returns 0.
+
+To see the actual columns, call `list_columns` or `get_project`. Column names differ per project, so read them before filtering or moving.
+
+`move_task`, `create_task` and `list_tasks` accept these shorthands when the server is configured with them. `get_project` and the tool descriptions list the configured ones.
+
+| Shorthand | Resolves to |
+|---|---|
+| `pending` | `BUGHERD_COLUMN_PENDING` |
+| `in_progress`, `in progress` | `BUGHERD_COLUMN_IN_PROGRESS` |
+| `done`, `done_label` | `BUGHERD_COLUMN_DONE` |
+
+Any other value, or a shorthand that isn't configured, is passed through as the column name.
+
+## Tasks {#tasks}
+
+### `list_tasks`
+
+| arg | type | meaning |
+|---|---|---|
+| `status` | string | Lifecycle filter (§ Columns and status) |
+| `priority` | string | `not set`, `critical`, `important`, `normal` or `minor` |
+| `tag` | string | Tag name |
+| `assigned_to_id` | number | Assignee's user ID |
+| `external_id` | string | External reference, such as a Jira key |
+| `updated_since`, `created_since` | string | ISO datetime |
+| `page` | number | Page, starting at 1. 100 tasks per page; an empty page means there are no more |
+
+The header reads `Showing N of TOTAL tasks (page P):`. Each task shows `Comments: N`, counting private comments. BugHerd's task endpoints have no comment count, so the server fetches each task's comments (§ Rate limits). A count shows `unknown (fetch failed)` when that fetch failed.
+
+### `create_task`
+
+`description` (required), `priority` (one of the five names), `status` (column or shorthand; omit for feedback), `assigned_to_email` or `assigned_to_id`, `requester_email`, `tag_names` (string array), `external_id`.
+
+### `update_task`
+
+`task_id` (required) plus any of: `description`, `priority`, `assigned_to_id` (`null` unassigns everyone), `assigned_to_email`, `unassign_user` (removes one assignee by user ID), `tag_names` (replaces all tags), `external_id`, `site`, `url` (the page path). To change the column, use `move_task`.
+
+## Comments {#comments}
+
+`add_comment({ task_id, text, user_id?, email?, is_private? })`
+
+- The author is the call's `user_id` or `email` if either is given; otherwise the configured default (`BUGHERD_USER_ID`, then `BUGHERD_USER_EMAIL`). An author on the call replaces the default entirely, so a default `user_id` never overrides an explicit `email`. `user_id` wins when both are given.
+- Without any author, BugHerd posts the comment as anonymous, because the API key belongs to the account, not a person.
+- `is_private: true` makes the comment visible to team members only, not guests (clients).
+- The response may not name the author (`unknown user`), because BugHerd's create response leaves `user_id` out.
+
+`list_comments({ task_id })` returns every comment, private ones included, in the order BugHerd sends them.
+
+## Attachments {#attachments}
+
+### Adding attachments {#adding}
+
+`add_attachment({ task_id, file_name, url })`
+
+| `url` value | What happens |
+|---|---|
+| `http://…` or `https://…` | Sent to BugHerd's "create from URL" endpoint. BugHerd downloads the file, so the URL must be public. |
+| Absolute local path (`/home/…/shot.png`) | The server reads the file and uploads it as multipart to `…/tasks/{task_id}/attachments/upload`. |
+| Anything else (`shots/a.png`, `./a.png`) | Error: `Attachment source must be an http(s) URL or an absolute file path`. The server's working directory isn't the agent's, so relative paths are refused. |
+
+`file_name` is the name shown on the ticket. A missing local file fails with Node's `ENOENT` error. BugHerd documents a limit of about 30 seconds per upload request; for a large file, host it and pass its URL.
+
+After attaching, the result line ends with the stored URL. A working attachment's URL is `https://files.bugherd.com/…`. If it shows the local path instead, the server is running code from before local uploads were added: BugHerd stored the path as text and nobody can open the file. Restart the server, delete the broken attachment with `delete_attachment`, and attach again.
+
+### Downloading {#downloading}
+
+`get_attachment({ task_id, attachment_id? | file_name? | screenshot?, save_to? })`
+
+- Pick one: `attachment_id`, `file_name` (case-insensitive, as `list_attachments` prints it), or `screenshot: true`. With none, the call fails.
+- `screenshot: true` downloads the image BugHerd captured when the bug was reported. It isn't an attachment and doesn't appear in `list_attachments`.
+- The file is always written to disk, never returned inline. `save_to` sets the path (`~/` is the home folder); without it, the file goes to a new temp folder. An existing file is never overwritten.
+- The result reads `<name> (id: N) — <content type>, <size>` and then `Saved to: <path>`.
+- Files are only downloaded from `files.bugherd.com` and `www.bugherd.com`. These URLs are public and unsigned, so the server sends no credentials to fetch them.
+
+## Reading the output {#output}
+
+A task (from `get_task`, `list_tasks`, `create_task`, `update_task`, `move_task`):
+
+```
+#67 (id: 30000001)
+  Status: Ready for Review
+  Priority: normal
+  Comments: 3
+  Description: Make the whole pricing card clickable
+  Assigned to: Jane Doe (jane@example.com)
+  Tags: pricing
+  Site: https://example.com
+  URL: /pricing/
+  Screenshot: https://files.bugherd.com/…/screenshot.jpg
+  Attachments:
+    pricing-card.png (id: 4000001) — https://files.bugherd.com/…/pricing-card.png
+  Requester: John Roe (john@example.com)
+  Browser: Chrome 141
+  OS: macOS
+  Resolution: 1512x982
+  Public link: <guest-facing link>
+  Created: 2026-07-14T18:02:11Z
+  Updated: 2026-07-20T17:30:02Z
+```
+
+Lines appear only when the task has that field. `Comments:` appears only in `list_tasks`. `Public link` is the guest-facing link to the ticket.
+
+- A comment: `[2026-07-20T17:31:00Z] (user 67890, private): text`. `unknown user` means BugHerd didn't name the author.
+- An attachment: `file_name (id: N) — url`.
+- A column: `Name (id: N, tasks: N)`.
+- A member or guest: `Display Name (email, id: N)`.
+
+## Rate limits and retries {#rate-limits}
+
+BugHerd allows 60 requests a minute with a burst of 10, and answers `429` past that. The server runs at most 5 requests at once (`BUGHERD_MAX_CONCURRENT_REQUESTS`) and retries a `429` up to 3 times (`BUGHERD_MAX_RETRIES`). It waits as long as BugHerd's `Retry-After` header says, or 1, 2, then 4 seconds without one. If BugHerd asks for a wait longer than 30 seconds (`BUGHERD_MAX_RETRY_DELAY_MS`), the call fails with `rate limited and retry delay (…) exceeds maximum`.
+
+`list_tasks` makes one extra request per task for the comment counts, so a full page of 100 tasks is 101 requests and runs into the limit. Filter the list, or wait about a minute between full pages.
+
+## Configuration {#config}
+
+Each value comes from the first source that has it: the environment variable, then the file named by its `_FILE` variable, then the default file under `~/.config/bmcp/`.
+
+| Value | Env | Default file | Required |
+|---|---|---|---|
+| API key | `BUGHERD_API_KEY` | `~/.config/bmcp/api-key` | yes |
+| Project ID | `BUGHERD_PROJECT_ID` | `~/.config/bmcp/project-id` | yes |
+| Default comment author's user ID | `BUGHERD_USER_ID` | `~/.config/bmcp/user-id` | no |
+| Default comment author's email | `BUGHERD_USER_EMAIL` | `~/.config/bmcp/user-email` | no |
+
+Column shorthands come from `BUGHERD_COLUMN_PENDING`, `BUGHERD_COLUMN_IN_PROGRESS` and `BUGHERD_COLUMN_DONE` (environment only). To work on another project from the CLI, set `BUGHERD_PROJECT_ID` for that command: `env BUGHERD_PROJECT_ID=67890 bugherd tasks`.
+
+## CLI {#cli}
+
+`bugherd <command> [args] [flags]` uses the same configuration as the server. `bugherd --help` lists the commands.
+
+| Command | Tool it matches |
+|---|---|
+| `project`, `columns` | `get_project`, `list_columns` |
+| `tasks [--status --priority --tag --assigned-to --external-id --updated-since --created-since --page]` | `list_tasks` |
+| `task <id>` | `get_task` |
+| `create <description> [--priority --status --assign-email --assign-id --requester --tags=a,b --external-id]` | `create_task` |
+| `update <id> [--description --priority --assign-email --assign-id --unassign --tags=a,b --external-id --site --url]` | `update_task` |
+| `move <id> <column>` | `move_task` |
+| `comments <id>`, `comment <id> <text> [--private] [--user-id \| --email]` | `list_comments`, `add_comment` |
+| `attachments <id>` | `list_attachments` |
+| `download <id> [--attachment-id \| --file-name \| --screenshot] [--save-to]` | `get_attachment` |
+| `attach <id> <file-name> <url-or-path>` | `add_attachment`; a relative path is resolved against the current directory |
+| `detach <id> <attachment-id>` | `delete_attachment` |
+| `members`, `guests` | `list_members`, `list_guests` |
+
+- Flags take `--flag=value` or `--flag value`. `--private`, `--screenshot` and `--unassign` take no value. A flag that needs a value and gets none exits with `--name needs a value`.
+- The exit code is 0 on success, 1 on an error, and 2 when the help text is printed (`--help`, no command, or an unknown one).
+
+## Recipes {#recipes}
+
+**"Work on ticket #67."**
+```
+get_task({ local_task_id: 67 })          → note (id: …), Status, Attachments
+list_comments({ task_id: 30000001 })     → the latest PM or designer decision is the spec
+```
+
+**"Post an after-fix screenshot."**
+```
+add_attachment({ task_id: 30000001, file_name: "pricing-card-after.png",
+                 url: "/home/me/site/.tmp/shots/after.png" })
+  → check the result URL starts with https://files.bugherd.com/
+add_comment({ task_id: 30000001, text: "…" })
+```
+
+**"Look at what the reporter saw."**
+```
+get_attachment({ task_id: 30000001, screenshot: true })
+  → read the returned path
+```
+
+**"Move it to review."**
+```
+list_columns()                           → exact column names for this project
+move_task({ task_id: 30000001, column: "Ready for Review" })
+```
+
+**"Which open tickets haven't been discussed?"**
+```
+list_tasks({ status: "Ready for Review" })  → Comments: 0
+```
+
+## Diagnosis {#diagnosis}
+
+**`get_attachment` fails with "… cannot be parsed as a URL", or an attachment won't open on the ticket.** The attachment's URL is a local path, added by a server that predates local uploads (§ Adding attachments). Delete it and attach the file again from a restarted server.
+
+**`list_tasks` with a column name returns 0 tasks.** The status filter is the lifecycle state (§ Columns and status). Closed tasks need `status: "closed"`.
+
+**A comment posted as anonymous.** No default author is configured and the call had no `user_id` or `email`. Find the ID with `list_members`, then set `BUGHERD_USER_ID` or pass `user_id`.
+
+**`No BugHerd API key found` or `No BugHerd project ID found`, and the server exits.** None of the three sources has the value (§ Configuration).
+
+**`rate limited and retry delay (…) exceeds maximum`.** Too many requests in the last minute, usually from full `list_tasks` pages (§ Rate limits). Wait and call again.
+
+**`Refusing to overwrite existing file`.** `save_to` points at a file that exists. Pick another path or leave `save_to` out.
+
+**`No attachment matching … Available: …`.** The ID or name isn't on that task. The error lists what is. The task's screenshot isn't an attachment; use `screenshot: true`.
+
+**A change to the server doesn't show up.** The running server still has the old `dist/`. Run `bun run build`, then restart the server.
+
+## Source pointers {#source}
+
+- `src/index.ts`: MCP tool names, parameter schemas and descriptions, the text each tool returns.
+- `src/cli.ts`: CLI commands, flag parsing and the help text.
+- `src/shared.ts`: configuration lookup, column shorthands, comment counts, output formatting, `saveFile`.
+- `src/bugherd-client.ts`: API requests, the concurrency limit and 429 retries, task normalization (priority names, attachment `name`/`file_name`), attachment upload and download, the allowed file hosts.
