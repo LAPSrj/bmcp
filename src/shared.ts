@@ -198,7 +198,7 @@ export function formatBytes(n: number): string {
 
 export function saveFile(bytes: Buffer, fileName: string, saveTo?: string): string {
   const target = saveTo
-    ? path.resolve(saveTo)
+    ? path.resolve(saveTo.replace(/^~(?=$|\/)/, os.homedir()))
     : path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bugherd-")), path.basename(fileName));
   if (fs.existsSync(target)) {
     throw new Error(`Refusing to overwrite existing file: ${target}`);
