@@ -19,20 +19,34 @@ const client = createClient(config);
 
 // ── Arg parsing ─────────────────────────────────────────────
 
+const BOOLEAN_FLAGS = new Set(["private", "screenshot", "unassign"]);
+
 function parseFlags(args: string[]): { positional: string[]; flags: Record<string, string | true> } {
   const positional: string[] = [];
   const flags: Record<string, string | true> = {};
-  for (const arg of args) {
-    if (arg.startsWith("--")) {
-      const eq = arg.indexOf("=");
-      if (eq !== -1) {
-        flags[arg.slice(2, eq)] = arg.slice(eq + 1);
-      } else {
-        flags[arg.slice(2)] = true;
-      }
-    } else {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    if (!arg.startsWith("--")) {
       positional.push(arg);
+      continue;
     }
+    const eq = arg.indexOf("=");
+    if (eq !== -1) {
+      flags[arg.slice(2, eq)] = arg.slice(eq + 1);
+      continue;
+    }
+    const name = arg.slice(2);
+    if (BOOLEAN_FLAGS.has(name)) {
+      flags[name] = true;
+      continue;
+    }
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith("--")) {
+      console.error(`--${name} needs a value (--${name}=X or --${name} X).`);
+      process.exit(1);
+    }
+    flags[name] = value;
+    i++;
   }
   return { positional, flags };
 }
@@ -290,7 +304,8 @@ async function cmdDownload(positional: string[], flags: Record<string, string | 
 async function cmdAttach(positional: string[]) {
   const raw = requireArg(positional, 0, "task-id");
   const fileName = requireArg(positional, 1, "file-name");
-  const url = requireArg(positional, 2, "url");
+  const rawSource = requireArg(positional, 2, "url-or-path");
+  const source = /^https?:\/\//i.test(rawSource) ? rawSource : path.resolve(rawSource);
   const id = parseTaskId(raw);
   let taskId: number;
   if (id.local_task_id) {
@@ -300,7 +315,7 @@ async function cmdAttach(positional: string[]) {
     taskId = id.task_id!;
   }
 
-  const attachment = await client.addAttachment(taskId, fileName, url);
+  const attachment = await client.addAttachment(taskId, fileName, source);
   console.log(`Attachment added:\n${formatAttachment(attachment)}`);
 }
 
@@ -362,7 +377,8 @@ Commands:
   attachments <id>                 List attachments on a task
   download <id> [--attachment-id=N | --file-name=X | --screenshot]
                                    Download an attachment or screenshot
-  attach <id> <file-name> <url>    Add an attachment
+  attach <id> <file-name> <url-or-path>
+                                   Add an attachment from a public URL or a local file
   detach <id> <attachment-id>      Delete an attachment
   members                          List team members
   guests                           List guests/clients

@@ -290,11 +290,11 @@ server.tool(
 
 server.tool(
   "add_attachment",
-  "Add an attachment to a task from a URL or local file path (BugHerd's API accepts both — local paths are read and uploaded by the BH service when reachable from its workers)",
+  "Add an attachment to a task, either from a public URL that BugHerd downloads or from a local file that this server uploads",
   {
     task_id: z.number().describe("Global task ID"),
     file_name: z.string().describe("Name for the file (e.g. screenshot.png)"),
-    url: z.string().describe("Public URL OR local filesystem path of the file to attach (BH accepts both shapes for this endpoint)"),
+    url: z.string().describe("Public http(s) URL of the file, or an absolute local file path to upload"),
   },
   async ({ task_id, file_name, url }) => {
     const attachment = await client.addAttachment(task_id, file_name, url);

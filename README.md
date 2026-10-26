@@ -132,7 +132,7 @@ from **one** of its three sources above.
 | `list_comments` | List all comments on a task |
 | `list_attachments` | List attachments on a task |
 | `get_attachment` | Download an attachment, or the task's annotated screenshot, to a file |
-| `add_attachment` | Add an attachment from a URL |
+| `add_attachment` | Add an attachment from a public URL or an absolute local file path |
 | `delete_attachment` | Delete an attachment |
 | `list_members` | List organization team members |
 | `list_guests` | List organization guests/clients |
@@ -183,7 +183,7 @@ Task IDs accept global numeric IDs or `#N` for local task numbers.
 | `bugherd comment <id> <text> [--private] [--user-id=N \| --email=X]` | Add a comment (defaults to the configured author) |
 | `bugherd attachments <id>` | List attachments on a task |
 | `bugherd download <id> [--attachment-id=N \| --file-name=X \| --screenshot]` | Download an attachment or screenshot |
-| `bugherd attach <id> <file-name> <url>` | Add an attachment |
+| `bugherd attach <id> <file-name> <url-or-path>` | Add an attachment from a public URL or a local file |
 | `bugherd detach <id> <attachment-id>` | Delete an attachment |
 | `bugherd members` | List team members |
 | `bugherd guests` | List guests/clients |

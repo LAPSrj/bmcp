@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import * as path from "node:path";
+
 const BASE_URL = "https://www.bugherd.com";
 
 /** Hosts that attachment/screenshot URLs are allowed to point at. */
@@ -259,7 +262,9 @@ export class BugherdClient {
     };
     const init: RequestInit = { method, headers };
 
-    if (body) {
+    if (body instanceof FormData) {
+      init.body = body;
+    } else if (body) {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
     }
@@ -476,16 +481,29 @@ export class BugherdClient {
     return data.attachments;
   }
 
+  /** BugHerd stores a non-URL `url` as a dead link, so local paths go through the upload endpoint. */
   async addAttachment(
     taskId: number,
     fileName: string,
-    url: string
+    source: string
   ): Promise<Attachment> {
-    const data = await this.request<{ attachment: Attachment }>(
-      "POST",
-      `/api_v2/projects/${this.projectId}/tasks/${taskId}/attachments.json`,
-      { attachment: { file_name: fileName, url } }
-    );
+    const base = `/api_v2/projects/${this.projectId}/tasks/${taskId}/attachments`;
+    if (/^https?:\/\//i.test(source)) {
+      const data = await this.request<{ attachment: Attachment }>(
+        "POST",
+        `${base}.json`,
+        { attachment: { file_name: fileName, url: source } }
+      );
+      return data.attachment;
+    }
+    if (!path.isAbsolute(source)) {
+      throw new Error(
+        `Attachment source must be an http(s) URL or an absolute file path, got "${source}".`
+      );
+    }
+    const form = new FormData();
+    form.append("file", new Blob([await readFile(source)]), fileName);
+    const data = await this.request<{ attachment: Attachment }>("POST", `${base}/upload`, form);
     return data.attachment;
   }
 
