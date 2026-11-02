@@ -26,9 +26,16 @@ bun install
 bun run build
 ```
 
-This produces two binaries in `dist/`:
-- `bmcp` — MCP server (stdio transport)
-- `bugherd` — standalone CLI
+This type-checks the source with `tsc`, then bundles each entry point into a
+single file in `dist/`:
+- `index.js` (`bmcp`) — MCP server (stdio transport)
+- `cli.js` (`bugherd`) — standalone CLI
+- `shared.js` — config resolution and the BugHerd client (`resolveConfig`,
+  `createClient`) for scripts that import them directly. External scripts
+  depend on this path, so keep it in the build.
+
+The bundles include their dependencies, so `dist/` runs without
+`node_modules`. Rebuild after `bun install` updates a dependency.
 
 ### MCP Configuration
 

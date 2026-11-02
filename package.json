@@ -8,7 +8,7 @@
     "bugherd": "dist/cli.js"
   },
   "scripts": {
-    "build": "bun run tsc",
+    "build": "tsc --noEmit && bun build src/index.ts src/cli.ts src/shared.ts --target=bun --outdir dist",
     "start": "bun dist/index.js"
   },
   "keywords": ["bugherd", "mcp", "model-context-protocol"],
