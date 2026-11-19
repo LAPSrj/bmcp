@@ -234,3 +234,7 @@ because they are not in BugHerd's docs and were confirmed against the live API:
   both to `file_name`, so nothing outside the client sees `name`.
 - **`?status=` filters the lifecycle state, not the column** — see the
   `list_tasks` tool description for the full caveat.
+
+## License
+
+[PolyForm Strict License 1.0.0](LICENSE.md)

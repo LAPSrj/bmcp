@@ -12,7 +12,7 @@
     "start": "bun dist/index.js"
   },
   "keywords": ["bugherd", "mcp", "model-context-protocol"],
-  "license": "MIT",
+  "license": "PolyForm-Strict-1.0.0",
   "description": "MCP server for BugHerd bug tracking",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
