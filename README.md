@@ -43,14 +43,14 @@ The server resolves the API key from the first source that has it:
 
 1. `BUGHERD_API_KEY` environment variable
 2. `BUGHERD_API_KEY_FILE` environment variable (path to a file holding the key)
-3. Default credential file `~/.config/bmcp/api-key` (mode `0600`)
+3. Default credential file `~/.config/bugherd-mcp/api-key` (mode `0600`)
 
 The project ID resolves the same way: `BUGHERD_PROJECT_ID` env,
-`BUGHERD_PROJECT_ID_FILE`, then `~/.config/bmcp/project-id`.
+`BUGHERD_PROJECT_ID_FILE`, then `~/.config/bugherd-mcp/project-id`.
 
 The default comment author is optional and resolves the same way:
-`BUGHERD_USER_ID` (`_FILE`, `~/.config/bmcp/user-id`) and `BUGHERD_USER_EMAIL`
-(`_FILE`, `~/.config/bmcp/user-email`). The API key belongs to the account, not
+`BUGHERD_USER_ID` (`_FILE`, `~/.config/bugherd-mcp/user-id`) and `BUGHERD_USER_EMAIL`
+(`_FILE`, `~/.config/bugherd-mcp/user-email`). The API key belongs to the account, not
 a person, so without one of these (or a `user_id`/`email` on the call) comments
 post as anonymous. If both are set, `user_id` wins. Find your ID with
 `bugherd members`.
@@ -83,11 +83,11 @@ across projects, or to keep secrets out of your MCP config). Write them once and
 keep each project's `.mcp.json` a bare launch block with no `env`:
 
 ```bash
-mkdir -p -m 700 ~/.config/bmcp
-printf %s 'your-api-key-here' > ~/.config/bmcp/api-key
-printf %s '12345'             > ~/.config/bmcp/project-id
-printf %s '67890'             > ~/.config/bmcp/user-id   # optional comment author
-chmod 600 ~/.config/bmcp/api-key ~/.config/bmcp/project-id ~/.config/bmcp/user-id
+mkdir -p -m 700 ~/.config/bugherd-mcp
+printf %s 'your-api-key-here' > ~/.config/bugherd-mcp/api-key
+printf %s '12345'             > ~/.config/bugherd-mcp/project-id
+printf %s '67890'             > ~/.config/bugherd-mcp/user-id   # optional comment author
+chmod 600 ~/.config/bugherd-mcp/api-key ~/.config/bugherd-mcp/project-id ~/.config/bugherd-mcp/user-id
 ```
 
 ```json
@@ -109,11 +109,11 @@ The server reads the files itself regardless of how it's launched, so no secret
 | Variable | Required | Description |
 |---|---|---|
 | `BUGHERD_API_KEY` | ✅¹ | Your BugHerd API key (found in Settings > General) |
-| `BUGHERD_API_KEY_FILE` | – | Path to a file holding the key; overrides the default `~/.config/bmcp/api-key` |
+| `BUGHERD_API_KEY_FILE` | – | Path to a file holding the key; overrides the default `~/.config/bugherd-mcp/api-key` |
 | `BUGHERD_PROJECT_ID` | ✅¹ | The numeric ID of your BugHerd project |
-| `BUGHERD_PROJECT_ID_FILE` | – | Path to a file holding the project ID; overrides the default `~/.config/bmcp/project-id` |
-| `BUGHERD_USER_ID` | – | BugHerd user ID that comments post as by default; falls back to `BUGHERD_USER_ID_FILE`, then `~/.config/bmcp/user-id` |
-| `BUGHERD_USER_EMAIL` | – | Email of the default comment author, used when no user ID is set; falls back to `BUGHERD_USER_EMAIL_FILE`, then `~/.config/bmcp/user-email` |
+| `BUGHERD_PROJECT_ID_FILE` | – | Path to a file holding the project ID; overrides the default `~/.config/bugherd-mcp/project-id` |
+| `BUGHERD_USER_ID` | – | BugHerd user ID that comments post as by default; falls back to `BUGHERD_USER_ID_FILE`, then `~/.config/bugherd-mcp/user-id` |
+| `BUGHERD_USER_EMAIL` | – | Email of the default comment author, used when no user ID is set; falls back to `BUGHERD_USER_EMAIL_FILE`, then `~/.config/bugherd-mcp/user-email` |
 | `BUGHERD_COLUMN_PENDING` | – | Column name to map to the "pending" shorthand |
 | `BUGHERD_COLUMN_IN_PROGRESS` | – | Column name to map to the "in_progress" shorthand |
 | `BUGHERD_COLUMN_DONE` | – | Column name to map to the "done_label" shorthand |
@@ -169,7 +169,7 @@ overwritten. To view a downloaded image, read the returned path.
 
 The same operations are available from the terminal via the `bugherd` command.
 It uses the same credential resolution as the MCP server (env vars or
-`~/.config/bmcp/` files).
+`~/.config/bugherd-mcp/` files).
 
 ```bash
 bugherd <command> [args] [flags]

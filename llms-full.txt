@@ -6,7 +6,7 @@ This file is the manual for agents that call the server's tools or the CLI. If y
 
 ## TL;DR {#tldr}
 
-- The server is bound to one project, set by `BUGHERD_PROJECT_ID` or `~/.config/bmcp/project-id`. No tool takes a project ID.
+- The server is bound to one project, set by `BUGHERD_PROJECT_ID` or `~/.config/bugherd-mcp/project-id`. No tool takes a project ID.
 - Tasks have two IDs. `#67` on the board is the `local_task_id`; `30000001` is the global `task_id`. Only `get_task` accepts the local number. Every other tool takes the global `task_id`, which `get_task` and `list_tasks` print as `(id: …)`.
 - `list_tasks`' `status` filter is BugHerd's lifecycle state, not the column. Some columns return 0 tasks through it (§ Columns and status).
 - `add_attachment` takes a public http(s) URL, which BugHerd downloads, or an absolute local file path, which the server uploads. A relative path is an error.
@@ -170,14 +170,14 @@ BugHerd allows 60 requests a minute with a burst of 10, and answers `429` past t
 
 ## Configuration {#config}
 
-Each value comes from the first source that has it: the environment variable, then the file named by its `_FILE` variable, then the default file under `~/.config/bmcp/`.
+Each value comes from the first source that has it: the environment variable, then the file named by its `_FILE` variable, then the default file under `~/.config/bugherd-mcp/`.
 
 | Value | Env | Default file | Required |
 |---|---|---|---|
-| API key | `BUGHERD_API_KEY` | `~/.config/bmcp/api-key` | yes |
-| Project ID | `BUGHERD_PROJECT_ID` | `~/.config/bmcp/project-id` | yes |
-| Default comment author's user ID | `BUGHERD_USER_ID` | `~/.config/bmcp/user-id` | no |
-| Default comment author's email | `BUGHERD_USER_EMAIL` | `~/.config/bmcp/user-email` | no |
+| API key | `BUGHERD_API_KEY` | `~/.config/bugherd-mcp/api-key` | yes |
+| Project ID | `BUGHERD_PROJECT_ID` | `~/.config/bugherd-mcp/project-id` | yes |
+| Default comment author's user ID | `BUGHERD_USER_ID` | `~/.config/bugherd-mcp/user-id` | no |
+| Default comment author's email | `BUGHERD_USER_EMAIL` | `~/.config/bugherd-mcp/user-email` | no |
 
 Column shorthands come from `BUGHERD_COLUMN_PENDING`, `BUGHERD_COLUMN_IN_PROGRESS` and `BUGHERD_COLUMN_DONE` (environment only). To work on another project from the CLI, set `BUGHERD_PROJECT_ID` for that command: `env BUGHERD_PROJECT_ID=67890 bugherd tasks`.
 

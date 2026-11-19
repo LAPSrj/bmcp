@@ -385,7 +385,7 @@ Commands:
 
 Task IDs accept global numeric IDs or #N for local task numbers.
 Configuration: BUGHERD_API_KEY, BUGHERD_PROJECT_ID, optional BUGHERD_USER_ID /
-BUGHERD_USER_EMAIL (env or ~/.config/bmcp/).
+BUGHERD_USER_EMAIL (env or ~/.config/bugherd-mcp/).
 `);
   process.exit(2);
 }
