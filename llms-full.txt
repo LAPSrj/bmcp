@@ -117,7 +117,7 @@ The header reads `Showing N of TOTAL tasks (page P):`. Each task shows `Comments
 
 `file_name` is the name shown on the ticket. A missing local file fails with Node's `ENOENT` error. BugHerd documents a limit of about 30 seconds per upload request; for a large file, host it and pass its URL.
 
-After attaching, the result line ends with the stored URL. A working attachment's URL is `https://files.bugherd.com/…`. If it shows the local path instead, the server is running code from before local uploads were added: BugHerd stored the path as text and nobody can open the file. Restart the server, delete the broken attachment with `delete_attachment`, and attach again.
+After attaching, the result line ends with the stored URL. A working attachment's URL is `https://files.bugherd.com/…`. A local upload that comes back as `null (id: …) — https://bugherd-attachments.s3.us-west-2.amazonaws.com/…/attachment` is broken: BugHerd stored the whole multipart request as the file, so it won't open. Delete it with `delete_attachment` and attach the file through the BugHerd web page instead. If it shows the local path instead, the server is running code from before local uploads were added: BugHerd stored the path as text and nobody can open the file. Restart the server, delete the broken attachment with `delete_attachment`, and attach again.
 
 ### Downloading {#downloading}
 
@@ -127,7 +127,7 @@ After attaching, the result line ends with the stored URL. A working attachment'
 - `screenshot: true` downloads the image BugHerd captured when the bug was reported. It isn't an attachment and doesn't appear in `list_attachments`.
 - The file is always written to disk, never returned inline. `save_to` sets the path (`~/` is the home folder); without it, the file goes to a new temp folder. An existing file is never overwritten.
 - The result reads `<name> (id: N) — <content type>, <size>` and then `Saved to: <path>`.
-- Files are only downloaded from `files.bugherd.com` and `www.bugherd.com`. These URLs are public and unsigned, so the server sends no credentials to fetch them.
+- Files are only downloaded from `files.bugherd.com`, `www.bugherd.com` and `bugherd-attachments.s3.us-west-2.amazonaws.com`. These URLs are public and unsigned, so the server sends no credentials to fetch them.
 
 ## Reading the output {#output}
 

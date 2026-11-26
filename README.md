@@ -226,9 +226,11 @@ A few behaviours of the upstream API that this server papers over, noted here
 because they are not in BugHerd's docs and were confirmed against the live API:
 
 - **Attachment and screenshot URLs are unsigned and public.** They point at
-  `files.bugherd.com/<token>/<name>`, need no `Authorization` header, and are
-  readable by anyone holding the URL. The server sends no credentials when
-  fetching them and refuses to download from any other host.
+  `files.bugherd.com/<token>/<name>`, or for files sent to the upload endpoint
+  at `bugherd-attachments.s3.us-west-2.amazonaws.com/<token>/attachment`, need no
+  `Authorization` header, and are readable by anyone holding the URL. The
+  server sends no credentials when fetching them and refuses to download from
+  any other host.
 - **An attachment's name has two spellings.** Inline on a task the field is
   `name`; on `/attachments.json` it is `file_name`. `BugherdClient` normalizes
   both to `file_name`, so nothing outside the client sees `name`.

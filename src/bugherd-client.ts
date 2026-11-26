@@ -3,8 +3,12 @@ import * as path from "node:path";
 
 const BASE_URL = "https://www.bugherd.com";
 
-/** Hosts that attachment/screenshot URLs are allowed to point at. */
-const ALLOWED_FILE_HOSTS = new Set(["files.bugherd.com", "www.bugherd.com"]);
+/** Hosts that attachment/screenshot URLs are allowed to point at. Uploaded files are served from the S3 bucket. */
+const ALLOWED_FILE_HOSTS = new Set([
+  "files.bugherd.com",
+  "www.bugherd.com",
+  "bugherd-attachments.s3.us-west-2.amazonaws.com",
+]);
 
 /**
  * BugHerd's list endpoint returns only `priority_id`; the single-task endpoint
@@ -292,7 +296,7 @@ export class BugherdClient {
   }
 
   /**
-   * Fetch binary content from a BugHerd file URL (files.bugherd.com).
+   * Fetch binary content from a BugHerd file URL (one of ALLOWED_FILE_HOSTS).
    * These URLs are unsigned and public — no Authorization header is sent, so a
    * task's file token is the only credential involved.
    */
